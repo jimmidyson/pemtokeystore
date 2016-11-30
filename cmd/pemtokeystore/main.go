@@ -55,7 +55,7 @@ func main() {
 	flags.StringVar(&opts.KeystorePassword, "keystore-password", "", "keystore `password`")
 	flags.Var((*mapFlag)(&opts.CertFiles), "cert-file", "PEM-encoded certificate file(s) in the format `alias=path` - repeat for multiple files")
 	flags.Var((*mapFlag)(&opts.PrivateKeyFiles), "key-file", "PEM-encoded private key file(s) in the format `alias=path` - repeat for multiple files")
-	flags.Var((*stringSliceFlag)(&opts.CACertFiles), "ca-cert-file", "PEM-encoded CA certificate file `path`(s) - repeat for multiple files")
+	flags.Var((*stringSliceFlag)(&opts.CACertFiles), "ca-file", "PEM-encoded CA certificate file `path`(s) - repeat for multiple files")
 
 	if err := flags.Parse(os.Args[1:]); err != nil {
 		fmt.Fprintln(os.Stderr, "Failed to parse flags:", err)
