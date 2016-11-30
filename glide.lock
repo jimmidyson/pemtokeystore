@@ -1,0 +1,6 @@
+hash: 284e1386ddbd3317ea75cbb592b291c6ba98c5afe193953d7e42008b15718905
+updated: 2016-11-30T22:08:02.464273959Z
+imports:
+- name: github.com/pavel-v-chernykh/keystore-go
+  version: 576b40edd6576d6369e24f499368b8573e1d523f
+testImports: []
