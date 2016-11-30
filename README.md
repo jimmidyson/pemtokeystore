@@ -1,5 +1,9 @@
 # Easily convert PEM files to Java Keystore
 
+[![Go Report Card](https://goreportcard.com/badge/github.com/jimmidyson/pemtokeystore)](https://goreportcard.com/report/github.com/jimmidyson/pemtokeystore)
+[![GoDoc](https://godoc.org/github.com/jimmidyson/pemtokeystore?status.svg)](https://godoc.org/github.com/jimmidyson/pemtokeystore)
+[![license](https://img.shields.io/github/license/jimmidyson/pemtokeystore.svg)](https://github.com/jimmidyson/pemtokeystore)
+
 ## Installation
 
     go get github.com/jimmidyson/pemtokeystore/cmd/pemtokeystore
