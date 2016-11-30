@@ -23,3 +23,6 @@ $ pemtokeystore -keystore my.ks -keystore-password changeit \
                 -ca-file ca-root.pem -ca-file ca-signer.pem \
                 -cert-file myserver=server.pem -key-file myserver=key.pem
 ```
+
+### License
+This project is [Apache Licensed](LICENSE)
