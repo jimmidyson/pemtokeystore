@@ -16,3 +16,10 @@
             path to keystore
       -keystore-password password
             keystore password
+
+## Example
+```bash
+$ pemtokeystore -keystore my.ks -keystore-password changeit \
+                -ca-cert-file ca-root.pem -ca-cert-file ca-signer.pem \
+                -cert-file myserver=server.pem -key-file myserver=key.pem
+```
