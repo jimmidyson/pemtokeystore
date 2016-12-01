@@ -15,27 +15,41 @@
 package pemtokeystore_test
 
 import (
+	"bytes"
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"testing"
+
+	"sync"
+
+	"strings"
+
+	"time"
 
 	"github.com/jimmidyson/pemtokeystore"
 )
 
 const (
 	rootCAFile                   = "root-ca"
-	intermediateCAFile           = "intermediate-ca"
 	serverFromRootCAFile         = "server-from-root"
 	serverFromIntermediateCAFile = "server-from-intermediate"
 )
 
-var testKeystore = filepath.Join("testdata", "test.ks")
+var (
+	testKeystore = filepath.Join("testdata", "test.ks")
+
+	serverCerts = [][]string{
+		[]string{serverFromRootCAFile, rootCAFile},
+		[]string{serverFromIntermediateCAFile, rootCAFile},
+	}
+)
 
 func certFile(name string) string {
 	return filepath.Join("testdata", name+".pem")
@@ -46,13 +60,9 @@ func keyFile(name string) string {
 }
 
 func startTLSServer(certs ...string) (*httptest.Server, error) {
-	var certChainBytes []byte
-	for _, cert := range certs {
-		b, err := ioutil.ReadFile(certFile(cert))
-		if err != nil {
-			return nil, err
-		}
-		certChainBytes = append(certChainBytes, b...)
+	certChainBytes, err := ioutil.ReadFile(certFile(certs[0] + "-bundle"))
+	if err != nil {
+		return nil, err
 	}
 	keyBytes, err := ioutil.ReadFile(keyFile(certs[0]))
 	if err != nil {
@@ -72,12 +82,21 @@ func startTLSServer(certs ...string) (*httptest.Server, error) {
 	}
 	ts.StartTLS()
 
-	// Validate server is correctly set up using golang client and only specifiying root cert as trusted.
-	caCert, err := ioutil.ReadFile(certFile(certs[len(certs)-1]))
+	err = validateServerCert(certFile(certs[len(certs)-1]), ts.URL)
 	if err != nil {
 		ts.Close()
 		return nil, err
 	}
+
+	return ts, nil
+}
+
+func validateServerCert(caCertFile, url string) error {
+	caCert, err := ioutil.ReadFile(caCertFile)
+	if err != nil {
+		return err
+	}
+
 	caCertPool := x509.NewCertPool()
 	caCertPool.AppendCertsFromPEM(caCert)
 	tlsConfig := &tls.Config{
@@ -86,22 +105,27 @@ func startTLSServer(certs ...string) (*httptest.Server, error) {
 	tlsConfig.BuildNameToCertificate()
 	transport := &http.Transport{TLSClientConfig: tlsConfig}
 	client := &http.Client{Transport: transport}
-	resp, err := client.Get(ts.URL)
+	resp, err := client.Get(url)
 	if err != nil {
-		ts.Close()
-		return nil, err
+		return err
 	}
 	resp.Body.Close()
 
-	return ts, nil
+	return nil
 }
 
-func TestJavaValidateServerFromRootCA(t *testing.T) {
-	serverCerts := [][]string{
-		[]string{serverFromRootCAFile, rootCAFile},
-		[]string{serverFromIntermediateCAFile, intermediateCAFile, rootCAFile},
+func validateKeystoreWithKeytool(t *testing.T) error {
+	keytool, err := exec.LookPath("keytool")
+	if err == nil {
+		cmd := exec.Command(keytool, "-list", "-keystore", testKeystore, "-storepass", pemtokeystore.DefaultKeystorePassword)
+		out, err := cmd.CombinedOutput()
+		t.Log(string(out))
+		return err
 	}
+	return nil
+}
 
+func TestJavaClientKeystore(t *testing.T) {
 	javac, err := exec.LookPath("javac")
 	if err != nil {
 		t.Fatal(err)
@@ -131,7 +155,7 @@ func TestJavaValidateServerFromRootCA(t *testing.T) {
 				CACertFiles:  []string{certFile(rootCAFile)},
 				KeystorePath: testKeystore,
 			}
-			//defer os.Remove(testKeystore)
+			defer os.Remove(testKeystore)
 			if err = pemtokeystore.CreateKeystore(opts); err != nil {
 				t.Error(err)
 				return
@@ -152,13 +176,71 @@ func TestJavaValidateServerFromRootCA(t *testing.T) {
 	}
 }
 
-func validateKeystoreWithKeytool(t *testing.T) error {
-	keytool, err := exec.LookPath("keytool")
-	if err == nil {
-		cmd := exec.Command(keytool, "-list", "-keystore", testKeystore, "-storepass", "")
-		out, err := cmd.CombinedOutput()
-		t.Log(string(out))
-		return err
+func TestJavaServerKeystore(t *testing.T) {
+	javac, err := exec.LookPath("javac")
+	if err != nil {
+		t.Fatal(err)
 	}
-	return nil
+	cmd := exec.Command(javac, "testdata/Server.java")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Log(string(out))
+		t.Fatal(err)
+	}
+
+	java, err := exec.LookPath("java")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, s := range serverCerts {
+		func() {
+			opts := pemtokeystore.Options{
+				PrivateKeyFiles: map[string]string{"server": keyFile(s[0])},
+				CertFiles:       map[string]string{"server": certFile(s[0] + "-bundle")},
+				KeystorePath:    testKeystore,
+			}
+			//defer os.Remove(testKeystore)
+			if err = pemtokeystore.CreateKeystore(opts); err != nil {
+				t.Error(err)
+				return
+			}
+			if err = validateKeystoreWithKeytool(t); err != nil {
+				t.Error(err)
+				return
+			}
+
+			var wg sync.WaitGroup
+			wg.Add(1)
+			cmd := exec.Command(java, "-cp", "testdata", "Server", testKeystore, "12345")
+			out := bytes.Buffer{}
+			cmd.Stdout = &out
+			cmd.Stderr = &out
+			err = cmd.Start()
+			if err != nil {
+				t.Error(err)
+				return
+			}
+
+			go func() {
+				defer wg.Done()
+				cmd.Wait()
+			}()
+
+			// Give the Java server time to start up.
+			<-time.After(1 * time.Second)
+
+			err = validateServerCert(certFile(s[len(s)-1]), "https://localhost:12345")
+			cmd.Process.Kill()
+			if err != nil {
+				t.Error(err)
+			}
+
+			wg.Wait()
+			o := out.String()
+			if len(strings.TrimSpace(o)) > 0 {
+				t.Log(o)
+			}
+		}()
+	}
 }

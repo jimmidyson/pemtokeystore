@@ -21,11 +21,14 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
-	"strings"
-
 	keystore "github.com/pavel-v-chernykh/keystore-go"
+)
+
+const (
+	DefaultKeystorePassword = "changeit"
 )
 
 type Options struct {
@@ -42,23 +45,12 @@ func CreateKeystore(opts Options) error {
 		return fmt.Errorf("Missing keystore path")
 	}
 
-	ks := keystore.KeyStore{}
-
-	for alias, file := range opts.PrivateKeyFiles {
-		priv, err := privateKeyFromFile(file)
-		if err != nil {
-			return err
-		}
-		certs, err := certsFromFile(opts.CertFiles[alias])
-		if err != nil {
-			return err
-		}
-		ks[alias] = &keystore.PrivateKeyEntry{
-			Entry:     keystore.Entry{CreationDate: time.Now()},
-			PrivKey:   priv,
-			CertChain: certs,
-		}
+	keystorePassword := []byte(opts.KeystorePassword)
+	if len(keystorePassword) == 0 {
+		keystorePassword = []byte(DefaultKeystorePassword)
 	}
+
+	ks := keystore.KeyStore{}
 
 	for _, cafile := range opts.CACertFiles {
 		certs, err := certsFromFile(cafile)
@@ -74,24 +66,43 @@ func CreateKeystore(opts Options) error {
 			if len(parsed) != 1 {
 				return fmt.Errorf("could not decode single CA certificate")
 			}
-			cn := parsed[0].Subject.CommonName
-			if len(cn) == 0 {
-				return fmt.Errorf("missing cn in CA certificate subject: %v", parsed[0].Subject)
-			}
 
-			alias := strings.ToLower(cn)
-			alias = strings.Replace(alias, " ", "", -1)
-			ks[alias] = &keystore.TrustedCertificateEntry{
-				Entry:       keystore.Entry{CreationDate: time.Now()},
-				Certificate: cert,
+			for _, ca := range parsed {
+				cn := ca.Subject.CommonName
+				if len(cn) == 0 {
+					return fmt.Errorf("missing cn in CA certificate subject: %v", ca.Subject)
+				}
+
+				alias := strings.Replace(strings.ToLower(cn), " ", "", -1)
+				ks[alias] = &keystore.TrustedCertificateEntry{
+					Entry:       keystore.Entry{CreationDate: time.Now()},
+					Certificate: cert,
+				}
 			}
 		}
 	}
 
-	return writeKeyStore(ks, opts.KeystorePath, []byte(opts.KeystorePassword))
+	for alias, file := range opts.PrivateKeyFiles {
+		priv, err := privateKeyFromFile(file, keystorePassword)
+		if err != nil {
+			return err
+		}
+
+		certs, err := certsFromFile(opts.CertFiles[alias])
+		if err != nil {
+			return err
+		}
+		ks[alias] = &keystore.PrivateKeyEntry{
+			Entry:     keystore.Entry{CreationDate: time.Now()},
+			PrivKey:   priv,
+			CertChain: certs,
+		}
+	}
+
+	return writeKeyStore(ks, opts.KeystorePath, keystorePassword)
 }
 
-func privateKeyFromFile(file string) ([]byte, error) {
+func privateKeyFromFile(file string, password []byte) ([]byte, error) {
 	pkbs, err := pemFileToBlocks(file)
 	if err != nil {
 		return nil, err
@@ -100,7 +111,22 @@ func privateKeyFromFile(file string) ([]byte, error) {
 		return nil, fmt.Errorf("failed to single PEM block from file %s", file)
 	}
 
-	return pkbs[0].Bytes, nil
+	var pk interface{}
+	pkb := pkbs[0]
+	switch pkb.Type {
+	case "RSA PRIVATE KEY":
+		pk, err = x509.ParsePKCS1PrivateKey(pkb.Bytes)
+	case "EC PRIVATE KEY":
+		pk, err = x509.ParseECPrivateKey(pkb.Bytes)
+	default:
+		return nil, fmt.Errorf("unsupported private key type: %s", pkb.Type)
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	return convertPrivateKeyToPKCS8(pk)
 }
 
 func certsFromFile(file string) ([]keystore.Certificate, error) {
@@ -136,7 +162,10 @@ func pemFileToBlocks(path string) ([]*pem.Block, error) {
 	for {
 		current, raw = pem.Decode(raw)
 		if current == nil {
-			return pemBlocks, nil
+			if len(pemBlocks) > 0 {
+				return pemBlocks, nil
+			}
+			return nil, fmt.Errorf("failed to decode any PEM blocks from %s", path)
 		}
 		pemBlocks = append(pemBlocks, current)
 		if len(raw) == 0 {
