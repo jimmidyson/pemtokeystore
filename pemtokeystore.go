@@ -23,6 +23,8 @@ import (
 	"path/filepath"
 	"time"
 
+	"strings"
+
 	keystore "github.com/pavel-v-chernykh/keystore-go"
 )
 
@@ -77,7 +79,9 @@ func CreateKeystore(opts Options) error {
 				return fmt.Errorf("missing cn in CA certificate subject: %v", parsed[0].Subject)
 			}
 
-			ks[cn] = &keystore.TrustedCertificateEntry{
+			alias := strings.ToLower(cn)
+			alias = strings.Replace(alias, " ", "", -1)
+			ks[alias] = &keystore.TrustedCertificateEntry{
 				Entry:       keystore.Entry{CreationDate: time.Now()},
 				Certificate: cert,
 			}
