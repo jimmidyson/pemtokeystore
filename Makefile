@@ -56,7 +56,7 @@ checksum:
 .PHONY: clean
 clean:
 	rm -rf $(BUILD_DIR)
-	rm -rf testdata/*.csr testdata/*.json testdata/*.pem testdata/.created
+	rm -rf testdata/*.csr testdata/*.json testdata/*.pem testdata/.created testdata/*.class
 
 .PHONY: docker
 docker: out/pemtokeystore Dockerfile
