@@ -64,7 +64,7 @@ docker: out/pemtokeystore Dockerfile
 
 .PHONY: test
 test: create-test-certs
-	go test -race .
+	./test.sh
 
 .PHONY: create-test-certs
 create-test-certs: testdata/.created
