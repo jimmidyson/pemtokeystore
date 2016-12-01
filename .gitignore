@@ -1,3 +1,6 @@
 /vendor
 /pemtokeystore
 /out
+/testdata/*
+!/testdata/create-certs.sh
+!/testdata/*.java

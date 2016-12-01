@@ -56,7 +56,21 @@ checksum:
 .PHONY: clean
 clean:
 	rm -rf $(BUILD_DIR)
+	rm -rf testdata/*.csr testdata/*.json testdata/*.pem testdata/.created
 
 .PHONY: docker
 docker: out/pemtokeystore Dockerfile
 	docker build -t $(DOCKER_IMAGE_NAME):$(DOCKER_IMAGE_TAG) .
+
+.PHONY: test
+test: create-test-certs
+	go test -race .
+
+.PHONY: create-test-certs
+create-test-certs: testdata/.created
+
+testdata/.created: testdata/create-certs.sh
+	testdata/create-certs.sh
+	touch testdata/.created
+
+
