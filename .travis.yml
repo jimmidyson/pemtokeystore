@@ -15,6 +15,7 @@ jdk:
 before_install:
   - curl https://glide.sh/get | sh
   - glide install --strip-vendor
+  - go get github.com/cloudflare/cfssl/cmd/...
   - go get github.com/mattn/goveralls
 
 script:
