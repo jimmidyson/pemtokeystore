@@ -1,6 +1,8 @@
 language: go
 dist: trusty
-sudo: false
+sudo: required
+services:
+  - docker
 branches:
   only:
   - master
@@ -38,7 +40,7 @@ deploy:
     repo: jimmidyson/pemtokeystore
     tags: true
 - provider: script
-  script: docker-push.sh
+  script: travis-docker-push.sh
   skip_cleanup: true
   on:
     repo: jimmidyson/pemtokeystore
