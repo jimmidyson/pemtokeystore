@@ -2,3 +2,6 @@ package: github.com/jimmidyson/pemtokeystore
 import:
 - package: github.com/pavel-v-chernykh/keystore-go
   version: ^2.0.0
+- package: golang.org/x/crypto
+  subpackages:
+  - pbkdf2
