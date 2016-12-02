@@ -62,11 +62,6 @@ clean:
 docker: out/pemtokeystore Dockerfile
 	docker build -t $(DOCKER_IMAGE_NAME):$(DOCKER_IMAGE_TAG) .
 
-
-.PHONY: docker-push
-docker-push: docker
-	docker push $(DOCKER_IMAGE_NAME):$(DOCKER_IMAGE_TAG)
-
 .PHONY: test
 test: create-test-certs
 	./test.sh
