@@ -29,7 +29,7 @@ script:
 - make DOCKER_IMAGE_TAG=${TRAVIS_TAG:-latest} docker
 after_success:
 - bash <(curl -s https://codecov.io/bash)
-- iif ([ "$TRAVIS_BRANCH" == "master" ] || [ ! -z "$TRAVIS_TAG" ]) && [ "$TRAVIS_PULL_REQUEST" == "false" ]; then
+- if ([ "$TRAVIS_BRANCH" == "master" ] || [ ! -z "$TRAVIS_TAG" ]) && [ "$TRAVIS_PULL_REQUEST" == "false" ]; then
     docker login -e="$DOCKER_HUB_EMAIL" -u="$DOCKER_HUB_USERNAME" -p="$DOCKER_HUB_PASSWORD";
     docker push jimmidyson/pemtokeystore:${TRAVIS_TAG:-latest};
   fi
