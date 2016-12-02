@@ -3,10 +3,10 @@ dist: trusty
 sudo: required
 services:
   - docker
-
 branches:
   only:
   - master
+  - /^v(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-[\da-z\-]+(?:\.[\da-z\-]+)*)?(?:\+[\da-z\-]+(?:\.[\da-z\-]+)*)?$/ig
 go:
 - 1.7.3
 env:
