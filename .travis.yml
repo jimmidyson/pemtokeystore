@@ -1,25 +1,30 @@
 language: go
-
 dist: trusty
 sudo: false
-
 branches:
   only:
-    - master
-
+  - master
 go:
-  - 1.7.3
+- 1.7.3
 jdk:
-  - openjdk8
-
+- openjdk8
 before_install:
-  - curl https://glide.sh/get | sh
-  - glide install --strip-vendor
-  - go get github.com/cloudflare/cfssl/cmd/...
-  - go get github.com/mattn/goveralls
-
+- curl https://glide.sh/get | sh
+- glide install --strip-vendor
+- go get github.com/cloudflare/cfssl/cmd/...
+- go get github.com/mattn/goveralls
 script:
-  - make clean test
-
+- make clean test
+- make cross
 after_success:
-  - bash <(curl -s https://codecov.io/bash)
+- bash <(curl -s https://codecov.io/bash)
+deploy:
+  provider: releases
+  api_key:
+    secure: LoCva223NGMKfZM4DKcr1VgH46EJ6sXUhyAMDmIC2AtgUjTQLqJfT4c/dSb5pRJ9fQDNVq8jUqxgX6aGW/ioaxVZcVp+7YjjJALvRuGGSNPU6TMr+RrYYeeSco8qDmC6WBIeAB6h9Bx3gfbrrgT3zHPlMcUClRafpC6hFBvcXknVFuZAAW03k82D6+3TvO217MMG2Fv5lbhiRCwK1bhHaPl8IC95IomuGSi0LnU7bD6F4x58raAIaDG2Y0DFQ4xfNM8iwPH4nebiizlbqvOfWOct5Wu4pZlBsswKDnjokZHJh2CEo/Ls5Ljm2OiWDmCnuoF2PjJ+xudoTQ3fiITl2gaglt46EM1WOKDPWOEC0k997kWGQlrPWXhScArBkWeY11IJxV1XSxODEy83BOuf3j2SBCDZnE8xG4YRY1HBMpPhHZCrhvecOYAiH6sSSOVSIrZa9T6czlKyuj3O5kf4A/s3caMGbhDu65q5SEXP3JBMRGPqC6RsDfQ8gOwBaielJgO26haLcsZcrFUlybajEX1BPXhrJUZPluR5MQjkvRIBuYHQ7TrBrCLeQJqIDgv+gWBZ+0nYg2P9tYP6xKBmKhwUynYJKE5PynK8sMXBTfkl/6VZ4sMPWc3sL6aWBDhV9V6G/y+JHqaRq0NU/HwR1aLAmGvQjQ77jZs7uffpHlU=
+  file:
+    - out/pemtokeystore-darwin-amd64
+    - out/pemtokeystore-linux-amd64
+    - out/pemtokeystore-windows-amd64.exe
+  on:
+    repo: jimmidyson/pemtokeystore
