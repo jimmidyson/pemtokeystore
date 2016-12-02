@@ -30,7 +30,7 @@ script:
 after_success:
 - bash <(curl -s https://codecov.io/bash)
 - if ([ "$TRAVIS_BRANCH" == "master" ] || [ ! -z "$TRAVIS_TAG" ]) && [ "$TRAVIS_PULL_REQUEST" == "false" ]; then
-    docker login -e="$DOCKER_HUB_EMAIL" -u="$DOCKER_HUB_USERNAME" -p="$DOCKER_HUB_PASSWORD";
+    docker login -u="$DOCKER_HUB_USERNAME" -p="$DOCKER_HUB_PASSWORD";
     docker push jimmidyson/pemtokeystore:${TRAVIS_TAG:-latest};
   fi
 deploy:
