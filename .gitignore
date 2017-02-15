@@ -5,3 +5,5 @@
 !/testdata/create-certs.sh
 !/testdata/*.java
 coverage.txt
+/.history/
+/.idea/
