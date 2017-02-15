@@ -35,9 +35,13 @@ type Options struct {
 	PrivateKeyFiles map[string]string
 	CertFiles       map[string]string
 	CACertFiles     []string
+	CACertDirs      []string
 
 	KeystorePath     string
 	KeystorePassword string
+
+	SourceKeystorePath     string
+	SourceKeystorePassword string
 }
 
 func CreateKeystore(opts Options) error {
@@ -50,30 +54,58 @@ func CreateKeystore(opts Options) error {
 		keystorePassword = []byte(DefaultKeystorePassword)
 	}
 
-	ks := keystore.KeyStore{}
+	var ks keystore.KeyStore
+	if len(opts.SourceKeystorePath) > 0 {
+		sourceKeystorePassword := []byte(opts.SourceKeystorePassword)
+		if len(keystorePassword) == 0 {
+			sourceKeystorePassword = []byte(DefaultKeystorePassword)
+		}
 
-	for _, cafile := range opts.CACertFiles {
-		certs, err := certsFromFile(cafile)
+		sourceKs, err := readKeyStore(opts.SourceKeystorePath, sourceKeystorePassword)
 		if err != nil {
 			return err
 		}
-		for _, cert := range certs {
-			parsed, err := x509.ParseCertificates(cert.Content)
+
+		ks = sourceKs
+	} else {
+		sourceKs, err := readKeyStore(opts.KeystorePath, keystorePassword)
+		if err != nil && !os.IsNotExist(err) {
+			return err
+		}
+
+		ks = sourceKs
+	}
+
+	for _, caFile := range opts.CACertFiles {
+		caCerts, err := readCACertsFromFile(caFile)
+		if err != nil {
+			return err
+		}
+
+		for alias, cert := range caCerts {
+			ks[alias] = &keystore.TrustedCertificateEntry{
+				Entry:       keystore.Entry{CreationDate: time.Now()},
+				Certificate: cert,
+			}
+		}
+	}
+
+	for _, caDir := range opts.CACertDirs {
+		files, err := ioutil.ReadDir(caDir)
+		if err != nil {
+			return err
+		}
+
+		for _, file := range files {
+			if file.IsDir() {
+				continue
+			}
+			caCerts, err := readCACertsFromFile(filepath.Join(caDir, file.Name()))
 			if err != nil {
-				return err
+				continue
 			}
 
-			if len(parsed) != 1 {
-				return fmt.Errorf("could not decode single CA certificate")
-			}
-
-			for _, ca := range parsed {
-				cn := ca.Subject.CommonName
-				if len(cn) == 0 {
-					return fmt.Errorf("missing cn in CA certificate subject: %v", ca.Subject)
-				}
-
-				alias := strings.Replace(strings.ToLower(cn), " ", "", -1)
+			for alias, cert := range caCerts {
 				ks[alias] = &keystore.TrustedCertificateEntry{
 					Entry:       keystore.Entry{CreationDate: time.Now()},
 					Certificate: cert,
@@ -100,6 +132,36 @@ func CreateKeystore(opts Options) error {
 	}
 
 	return writeKeyStore(ks, opts.KeystorePath, keystorePassword)
+}
+
+func readCACertsFromFile(caFile string) (map[string]keystore.Certificate, error) {
+	certs, err := certsFromFile(caFile)
+	if err != nil {
+		return nil, err
+	}
+
+	aliasCertMap := map[string]keystore.Certificate{}
+	for _, cert := range certs {
+		parsed, err := x509.ParseCertificates(cert.Content)
+		if err != nil {
+			return nil, err
+		}
+
+		if len(parsed) < 1 {
+			return nil, fmt.Errorf("could not decode CA certificate")
+		}
+
+		for _, ca := range parsed {
+			cn := ca.Subject.CommonName
+			if len(cn) == 0 {
+				return nil, fmt.Errorf("missing cn in CA certificate subject: %v", ca.Subject)
+			}
+
+			alias := strings.Replace(strings.ToLower(cn), " ", "", -1)
+			aliasCertMap[alias] = cert
+		}
+	}
+	return aliasCertMap, nil
 }
 
 func privateKeyFromFile(file string, password []byte) ([]byte, error) {
@@ -138,6 +200,7 @@ func certsFromFile(file string) ([]keystore.Certificate, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	var certs []keystore.Certificate
 	for _, cb := range cbs {
 		certs = append(certs, keystore.Certificate{
@@ -197,4 +260,17 @@ func writeKeyStore(ks keystore.KeyStore, path string, passphrase []byte) error {
 		os.Remove(tempFile.Name())
 	}
 	return err
+}
+
+func readKeyStore(filename string, password []byte) (keystore.KeyStore, error) {
+	f, err := os.Open(filename)
+	defer f.Close()
+	if err != nil {
+		return keystore.KeyStore{}, err
+	}
+	keyStore, err := keystore.Decode(f, password)
+	if err != nil {
+		return keystore.KeyStore{}, err
+	}
+	return keyStore, nil
 }
