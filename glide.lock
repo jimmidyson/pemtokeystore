@@ -1,10 +1,10 @@
 hash: 993242e77c8cc6706bd88b647aa166fc7b3680b7cfc4a14f8e82396a16df5d05
-updated: 2016-12-02T00:05:14.944631328Z
+updated: 2017-02-15T11:31:35.884361426Z
 imports:
 - name: github.com/pavel-v-chernykh/keystore-go
   version: 576b40edd6576d6369e24f499368b8573e1d523f
 - name: golang.org/x/crypto
-  version: beef0f4390813b96e8e68fd78570396d0f4751fc
+  version: 1f22c0103821b9390939b6776727195525381532
   subpackages:
   - pbkdf2
 testImports: []
