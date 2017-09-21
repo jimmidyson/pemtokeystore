@@ -7,7 +7,7 @@
 
 ## Installation
 
-    go get github.com/jimmidyson/pemtokeystore/cmd/pemtokeystore
+    go get github.com/syndesisio/pemtokeystore/cmd/pemtokeystore
 
 ## Usage
     Usage of pemtokeystore:
