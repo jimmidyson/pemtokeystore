@@ -8,7 +8,7 @@ branches:
   - master
   - /^(?i:v(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-[\da-z\-]+(?:\.[\da-z\-]+)*)?(?:\+[\da-z\-]+(?:\.[\da-z\-]+)*)?)$/
 go:
-- 1.7.3
+- 1.11.4
 env:
   global:
     - secure: "dbD2ERbzK4C7CAogjC6qskRQ9LYDEMWCIPJOVIugcc7PZSeKz1sPXHnd03NblgJVa5XG3r7WKbqNt3bxqkBIIuW64z7j1G1qHqNTG9jnd7Enpxt+CA/xlhAqUmIp1wkJS/m9co1mlgOfRjVoW0EmWuUK/c4omf6ZYCjKdgUwl+R9PEhRicd3g89yEu5aBW2U+aSYip8MaAuZGDCizlhTO4CoX4DkWqHee3SWqzuRJtBWg03xS3RQ8ZVNAw2RVMT9WPLQXf7l3QkA0UB3fHCLtyPc6qHwFwWF5u8hlFUYN15u3cBAVdSdaZ8v86P8SS1TiQ+9u+n2YzNwVDI2ZX4hcoXIgF2HkTkOwXvyobNh7DvcnJIWdSogSFlpLOuA5L6ggIx0W9NUUTgXIVgkGZuv5UHrq5bIbqRdCOQhz21bo3SIV3pdJ8gmJH2qmIM0oDbCv5Ge5/S8CNk2QrysRJ7qJgm5JgytNFA04xIEWQ9fbSq2Rxj2BKwpn7gdb9ZmLA60N5fduRKgydf6T8z3oTBOkfyU6ke7585zGbycZ2JQ7RjxuC9MJmNaggbPDdSWrNPBavDynGRjZP0l67FxHhVQH8CpWdCTc6V6DzHn7rfmgT4ibxKI5vC0IiBQtBy8b4Q+KkX1kKgMpmZBBuuuGuxlm5OrHY/F+gg/KM42wIBgdsI="
@@ -18,6 +18,7 @@ addons:
   apt:
     packages:
       - oracle-java8-set-default
+      - jq
 before_install:
 - curl https://glide.sh/get | sh
 - glide install --strip-vendor
