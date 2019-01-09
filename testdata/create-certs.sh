@@ -86,6 +86,6 @@ cat >server-csr.json <<EOF
 EOF
 
 cfssl gencert -ca root-ca.pem -ca-key root-ca-key.pem -config=cfssl-config.json -profile=server server-csr.json | cfssljson -bare server-from-root
-cfssl bundle -cert server-from-root.pem -ca-bundle root-ca.pem | cfssljson -bare server-from-root
+cfssl bundle -cert server-from-root.pem -ca-bundle root-ca.pem | jq '. | {"result": {"bundle": .}}' | cfssljson -bare server-from-root
 cfssl gencert -ca intermediate-ca.pem -ca-key intermediate-ca-key.pem -config=cfssl-config.json -profile=server server-csr.json | cfssljson -bare server-from-intermediate
-cfssl bundle -cert server-from-intermediate.pem -ca-bundle root-ca.pem -int-bundle intermediate-ca.pem | cfssljson -bare server-from-intermediate
+cfssl bundle -cert server-from-intermediate.pem -ca-bundle root-ca.pem -int-bundle intermediate-ca.pem | jq '. | {"result": {"bundle": .}}' | cfssljson -bare server-from-intermediate
