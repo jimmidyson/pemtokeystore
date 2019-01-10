@@ -38,9 +38,10 @@ import (
 )
 
 const (
-	rootCAFile                   = "root-ca"
-	serverFromRootCAFile         = "server-from-root"
-	serverFromIntermediateCAFile = "server-from-intermediate"
+	rootCAFile                    = "root-ca"
+	serverFromRootCAFile          = "server-from-root"
+	serverFromIntermediateCAFile  = "server-from-intermediate"
+	serverNosubjectFromRootCAFile = "server-nosubject-from-root"
 )
 
 var (
@@ -148,6 +149,38 @@ func TestCACertConversion(t *testing.T) {
 		t.Fatal(err)
 	}
 	truststore, ok := k["localhost"].(*keystore.TrustedCertificateEntry)
+	if !ok {
+		t.Fatalf("Converted keystore does not contain a trusted certificate entry %v", truststore)
+	}
+	if truststore.Certificate.Type != "X509" {
+		t.Fatalf("Parsed certificate is invalid")
+	}
+}
+
+// https://stackoverflow.com/questions/40312562/my-ssl-cert-chain-is-missing-a-subject
+func TestCACertConversionWithoutSubject(t *testing.T) {
+	contents, err := ioutil.ReadFile(certFile(serverNosubjectFromRootCAFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cert := &pemtokeystore.ByteCert{
+		Cert: contents,
+		Name: "server-nosubject-from-intermediate",
+	}
+
+	converter := pemtokeystore.CertConverter{
+		// This is required to make this kind of cert get converted:
+		FallbackToDescriptionWhenSubjectIsMissing: true,
+		CACerts:                []pemtokeystore.CertReader{
+			cert,
+		},
+	}
+	k, err := converter.ConvertCertsToKeystore()
+	if err != nil {
+		t.Fatal(err)
+	}
+	truststore, ok := k[cert.GetName()].(*keystore.TrustedCertificateEntry)
 	if !ok {
 		t.Fatalf("Converted keystore does not contain a trusted certificate entry %v", truststore)
 	}

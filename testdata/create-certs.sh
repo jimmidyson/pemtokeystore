@@ -89,3 +89,26 @@ cfssl gencert -ca root-ca.pem -ca-key root-ca-key.pem -config=cfssl-config.json 
 cfssl bundle -cert server-from-root.pem -ca-bundle root-ca.pem | jq '. | {"result": {"bundle": .}}' | cfssljson -bare server-from-root
 cfssl gencert -ca intermediate-ca.pem -ca-key intermediate-ca-key.pem -config=cfssl-config.json -profile=server server-csr.json | cfssljson -bare server-from-intermediate
 cfssl bundle -cert server-from-intermediate.pem -ca-bundle root-ca.pem -int-bundle intermediate-ca.pem | jq '. | {"result": {"bundle": .}}' | cfssljson -bare server-from-intermediate
+
+# https://stackoverflow.com/questions/40312562/my-ssl-cert-chain-is-missing-a-subject
+cat >server-nosubject-csr.json <<EOF
+{
+  "CN": "",
+  "hosts": [
+    "pemtokeystore.tld",
+    "127.0.0.1",
+    "localhost"
+  ],
+  "key": {
+    "algo": "ecdsa",
+    "size": 256
+  },
+  "names": [
+    {
+    }
+  ]
+}
+EOF
+
+cfssl gencert -ca root-ca.pem -ca-key root-ca-key.pem -config=cfssl-config.json -profile=server server-nosubject-csr.json | cfssljson -bare server-nosubject-from-root
+cfssl bundle -cert server-nosubject-from-root.pem -ca-bundle root-ca.pem | jq '. | {"result": {"bundle": .}}' | cfssljson -bare server-nosubject-from-root

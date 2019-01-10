@@ -32,10 +32,11 @@ const (
 )
 
 type CertConverter struct {
-	PrivateKeys map[string]CertReader
-	Certs       map[string]CertReader
-	CACerts     []CertReader
-	CACertDirs  []string
+	PrivateKeys                               map[string]CertReader
+	Certs                                     map[string]CertReader
+	CACerts                                   []CertReader
+	CACertDirs                                []string
+	FallbackToDescriptionWhenSubjectIsMissing bool
 
 	SourceKeystorePath     string
 	SourceKeystorePassword string
@@ -56,7 +57,7 @@ type Options struct {
 
 type CertReader interface {
 	Read() ([]byte, error)
-	Describe() string
+	GetName() string
 }
 
 type FileCert struct {
@@ -71,7 +72,7 @@ func (c *FileCert) Read() ([]byte, error) {
 	return raw, nil
 }
 
-func (c *FileCert) Describe() string {
+func (c *FileCert) GetName() string {
 	return c.Path
 }
 
@@ -84,7 +85,7 @@ func (c *ByteCert) Read() ([]byte, error) {
 	return c.Cert, nil
 }
 
-func (c *ByteCert) Describe() string {
+func (c *ByteCert) GetName() string {
 	return c.Name
 }
 
@@ -222,7 +223,11 @@ func (opts *CertConverter) parseCerts(certReader CertReader) (map[string]keystor
 		for _, ca := range parsed {
 			cn := ca.Subject.CommonName
 			if len(cn) == 0 {
-				return nil, fmt.Errorf("missing cn in CA certificate subject: %v", ca.Subject)
+				if opts.FallbackToDescriptionWhenSubjectIsMissing {
+					cn = certReader.GetName()
+				} else {
+					return nil, fmt.Errorf("missing cn in CA certificate subject: %v", ca.Subject)
+				}
 			}
 
 			alias := strings.Replace(strings.ToLower(cn), " ", "", -1)
@@ -238,7 +243,7 @@ func (opts *CertConverter) privateKeyFromCert(certReader CertReader) ([]byte, er
 		return nil, err
 	}
 	if len(pkbs) != 1 {
-		return nil, fmt.Errorf("failed to get single PEM block from cert %s", certReader.Describe())
+		return nil, fmt.Errorf("failed to get single PEM block from cert %s", certReader.GetName())
 	}
 
 	var pk interface{}
@@ -297,7 +302,7 @@ func (opts *CertConverter) pemToBlocks(cert CertReader) ([]*pem.Block, error) {
 			if len(pemBlocks) > 0 {
 				return pemBlocks, nil
 			}
-			return nil, fmt.Errorf("failed to decode any PEM blocks from %s", cert.Describe())
+			return nil, fmt.Errorf("failed to decode any PEM blocks from %s", cert.GetName())
 		}
 		pemBlocks = append(pemBlocks, current)
 		if len(raw) == 0 {
