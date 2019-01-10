@@ -19,6 +19,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
+	"github.com/pavel-v-chernykh/keystore-go"
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
@@ -37,9 +38,10 @@ import (
 )
 
 const (
-	rootCAFile                   = "root-ca"
-	serverFromRootCAFile         = "server-from-root"
-	serverFromIntermediateCAFile = "server-from-intermediate"
+	rootCAFile                    = "root-ca"
+	serverFromRootCAFile          = "server-from-root"
+	serverFromIntermediateCAFile  = "server-from-intermediate"
+	serverNosubjectFromRootCAFile = "server-nosubject-from-root"
 )
 
 var (
@@ -114,15 +116,77 @@ func validateServerCert(caCertFile, url string) error {
 	return nil
 }
 
-func validateKeystoreWithKeytool(t *testing.T) error {
+func validateKeystoreWithKeytool(t *testing.T, path string) error {
+	keystore := testKeystore
+	if path != "" {
+		keystore = path
+	}
 	keytool, err := exec.LookPath("keytool")
 	if err == nil {
-		cmd := exec.Command(keytool, "-list", "-keystore", testKeystore, "-storepass", pemtokeystore.DefaultKeystorePassword)
+		cmd := exec.Command(keytool, "-list", "-keystore", keystore, "-storepass", pemtokeystore.DefaultKeystorePassword)
 		out, err := cmd.CombinedOutput()
 		t.Log(string(out))
 		return err
 	}
 	return nil
+}
+
+func TestCACertConversion(t *testing.T) {
+	contents, err := ioutil.ReadFile(certFile(serverFromIntermediateCAFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	converter := pemtokeystore.CertConverter{
+		CACerts:                []pemtokeystore.CertReader{
+			&pemtokeystore.ByteCert{
+				Cert: contents,
+				Name: "server-from-intermediate",
+			},
+		},
+	}
+	k, err := converter.ConvertCertsToKeystore()
+	if err != nil {
+		t.Fatal(err)
+	}
+	truststore, ok := k["localhost"].(*keystore.TrustedCertificateEntry)
+	if !ok {
+		t.Fatalf("Converted keystore does not contain a trusted certificate entry %v", truststore)
+	}
+	if truststore.Certificate.Type != "X509" {
+		t.Fatalf("Parsed certificate is invalid")
+	}
+}
+
+// https://stackoverflow.com/questions/40312562/my-ssl-cert-chain-is-missing-a-subject
+func TestCACertConversionWithoutSubject(t *testing.T) {
+	contents, err := ioutil.ReadFile(certFile(serverNosubjectFromRootCAFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cert := &pemtokeystore.ByteCert{
+		Cert: contents,
+		Name: "server-nosubject-from-intermediate",
+	}
+
+	converter := pemtokeystore.CertConverter{
+		// This is required to make this kind of cert get converted:
+		FallbackToDescriptionWhenSubjectIsMissing: true,
+		CACerts:                []pemtokeystore.CertReader{
+			cert,
+		},
+	}
+	k, err := converter.ConvertCertsToKeystore()
+	if err != nil {
+		t.Fatal(err)
+	}
+	truststore, ok := k[cert.GetName()].(*keystore.TrustedCertificateEntry)
+	if !ok {
+		t.Fatalf("Converted keystore does not contain a trusted certificate entry %v", truststore)
+	}
+	if truststore.Certificate.Type != "X509" {
+		t.Fatalf("Parsed certificate is invalid")
+	}
 }
 
 func TestJavaClientKeystore(t *testing.T) {
@@ -152,7 +216,7 @@ func TestJavaClientKeystore(t *testing.T) {
 			defer ts.Close()
 
 			opts := pemtokeystore.Options{
-				CACertFiles:  []string{certFile(rootCAFile)},
+				CACertFiles:      []string{certFile(rootCAFile)},
 				KeystorePath: testKeystore,
 			}
 			defer os.Remove(testKeystore)
@@ -160,7 +224,7 @@ func TestJavaClientKeystore(t *testing.T) {
 				t.Error(err)
 				return
 			}
-			if err = validateKeystoreWithKeytool(t); err != nil {
+			if err = validateKeystoreWithKeytool(t, ""); err != nil {
 				t.Error(err)
 				return
 			}
@@ -196,16 +260,16 @@ func TestJavaServerKeystore(t *testing.T) {
 	for _, s := range serverCerts {
 		func() {
 			opts := pemtokeystore.Options{
-				PrivateKeyFiles: map[string]string{"server": keyFile(s[0])},
-				CertFiles:       map[string]string{"server": certFile(s[0] + "-bundle")},
-				KeystorePath:    testKeystore,
+				PrivateKeyFiles:  map[string]string{"server": keyFile(s[0])},
+				CertFiles:        map[string]string{"server": certFile(s[0] + "-bundle")},
+				KeystorePath: testKeystore,
 			}
 			//defer os.Remove(testKeystore)
 			if err = pemtokeystore.CreateKeystore(opts); err != nil {
 				t.Error(err)
 				return
 			}
-			if err = validateKeystoreWithKeytool(t); err != nil {
+			if err = validateKeystoreWithKeytool(t, ""); err != nil {
 				t.Error(err)
 				return
 			}

@@ -24,12 +24,23 @@ import (
 	"strings"
 	"time"
 
-	keystore "github.com/pavel-v-chernykh/keystore-go"
+	"github.com/pavel-v-chernykh/keystore-go"
 )
 
 const (
 	DefaultKeystorePassword = "changeit"
 )
+
+type CertConverter struct {
+	PrivateKeys                               map[string]CertReader
+	Certs                                     map[string]CertReader
+	CACerts                                   []CertReader
+	CACertDirs                                []string
+	FallbackToDescriptionWhenSubjectIsMissing bool
+
+	SourceKeystorePath     string
+	SourceKeystorePassword string
+}
 
 type Options struct {
 	PrivateKeyFiles map[string]string
@@ -44,42 +55,100 @@ type Options struct {
 	SourceKeystorePassword string
 }
 
+type CertReader interface {
+	Read() ([]byte, error)
+	GetName() string
+}
+
+type FileCert struct {
+	Path string
+}
+
+func (c *FileCert) Read() ([]byte, error) {
+	raw, err := ioutil.ReadFile(c.Path)
+	if err != nil {
+		return nil, err
+	}
+	return raw, nil
+}
+
+func (c *FileCert) GetName() string {
+	return c.Path
+}
+
+type ByteCert struct {
+	Cert []byte
+	Name string
+}
+
+func (c *ByteCert) Read() ([]byte, error) {
+	return c.Cert, nil
+}
+
+func (c *ByteCert) GetName() string {
+	return c.Name
+}
+
 func CreateKeystore(opts Options) error {
-	if len(opts.KeystorePath) == 0 {
-		return fmt.Errorf("Missing keystore path")
+	optsv2 := CertConverter{
+		CACertDirs:             opts.CACertDirs,
+		SourceKeystorePath:     opts.SourceKeystorePath,
+		SourceKeystorePassword: opts.SourceKeystorePassword,
 	}
 
-	keystorePassword := []byte(opts.KeystorePassword)
-	if len(keystorePassword) == 0 {
-		keystorePassword = []byte(DefaultKeystorePassword)
+	if len(opts.PrivateKeyFiles) > 0 {
+		optsv2.PrivateKeys = map[string]CertReader{}
+		for a, f := range opts.PrivateKeyFiles {
+			optsv2.PrivateKeys[a] = &FileCert{Path: f}
+		}
 	}
+
+	if len(opts.CertFiles) > 0 {
+		optsv2.Certs = map[string]CertReader{}
+		for a, f := range opts.CertFiles {
+			optsv2.Certs[a] = &FileCert{Path: f}
+		}
+	}
+
+	if len(opts.CACertFiles) > 0 {
+		optsv2.CACerts = []CertReader{}
+		for _, f := range opts.CACertFiles {
+			optsv2.CACerts = append(optsv2.CACerts, &FileCert{Path: f})
+		}
+	}
+
+	ks, err := optsv2.ConvertCertsToKeystore()
+	if err != nil {
+		return err
+	}
+
+	return WriteKeyStore(ks, opts.KeystorePath, opts.KeystorePassword)
+}
+
+
+func (opts *CertConverter) ConvertCertsToKeystore() (keystore.KeyStore, error) {
 
 	var ks keystore.KeyStore
 	if len(opts.SourceKeystorePath) > 0 {
 		sourceKeystorePassword := []byte(opts.SourceKeystorePassword)
-		if len(keystorePassword) == 0 {
+		if len(sourceKeystorePassword) == 0 {
 			sourceKeystorePassword = []byte(DefaultKeystorePassword)
 		}
 
 		sourceKs, err := readKeyStore(opts.SourceKeystorePath, sourceKeystorePassword)
 		if err != nil {
-			return err
+			return nil, err
 		}
 
 		ks = sourceKs
 	} else {
-		sourceKs, err := readKeyStore(opts.KeystorePath, keystorePassword)
-		if err != nil && !os.IsNotExist(err) {
-			return err
-		}
-
-		ks = sourceKs
+		ks = keystore.KeyStore{}
 	}
 
-	for _, caFile := range opts.CACertFiles {
-		caCerts, err := readCACertsFromFile(caFile)
+	for _, caFile := range opts.CACerts {
+		caCerts, err := opts.parseCerts(caFile)
 		if err != nil {
-			return err
+			return nil, err
 		}
 
 		for alias, cert := range caCerts {
@@ -93,14 +162,14 @@ func CreateKeystore(opts Options) error {
 	for _, caDir := range opts.CACertDirs {
 		files, err := ioutil.ReadDir(caDir)
 		if err != nil {
-			return err
+			return nil, err
 		}
 
 		for _, file := range files {
 			if file.IsDir() {
 				continue
 			}
-			caCerts, err := readCACertsFromFile(filepath.Join(caDir, file.Name()))
+			caCerts, err := opts.parseCerts(&FileCert{filepath.Join(caDir, file.Name())})
 			if err != nil {
 				continue
 			}
@@ -114,15 +183,15 @@ func CreateKeystore(opts Options) error {
 		}
 	}
 
-	for alias, file := range opts.PrivateKeyFiles {
-		priv, err := privateKeyFromFile(file, keystorePassword)
+	for alias, file := range opts.PrivateKeys {
+		priv, err := opts.privateKeyFromCert(file)
 		if err != nil {
-			return err
+			return nil, err
 		}
 
-		certs, err := certsFromFile(opts.CertFiles[alias])
+		certs, err := opts.loadCerts(opts.Certs[alias])
 		if err != nil {
-			return err
+			return nil, err
 		}
 		ks[alias] = &keystore.PrivateKeyEntry{
 			Entry:     keystore.Entry{CreationDate: time.Now()},
@@ -131,11 +200,11 @@ func CreateKeystore(opts Options) error {
 		}
 	}
 
-	return writeKeyStore(ks, opts.KeystorePath, keystorePassword)
+	return ks, nil
 }
 
-func readCACertsFromFile(caFile string) (map[string]keystore.Certificate, error) {
-	certs, err := certsFromFile(caFile)
+func (opts *CertConverter) parseCerts(certReader CertReader) (map[string]keystore.Certificate, error) {
+	certs, err := opts.loadCerts(certReader)
 	if err != nil {
 		return nil, err
 	}
@@ -154,7 +223,11 @@ func readCACertsFromFile(caFile string) (map[string]keystore.Certificate, error)
 		for _, ca := range parsed {
 			cn := ca.Subject.CommonName
 			if len(cn) == 0 {
-				return nil, fmt.Errorf("missing cn in CA certificate subject: %v", ca.Subject)
+				if opts.FallbackToDescriptionWhenSubjectIsMissing {
+					cn = certReader.GetName()
+				} else {
+					return nil, fmt.Errorf("missing cn in CA certificate subject: %v", ca.Subject)
+				}
 			}
 
 			alias := strings.Replace(strings.ToLower(cn), " ", "", -1)
@@ -164,13 +237,13 @@ func readCACertsFromFile(caFile string) (map[string]keystore.Certificate, error)
 	return aliasCertMap, nil
 }
 
-func privateKeyFromFile(file string, password []byte) ([]byte, error) {
-	pkbs, err := pemFileToBlocks(file)
+func (opts *CertConverter) privateKeyFromCert(certReader CertReader) ([]byte, error) {
+	pkbs, err := opts.pemToBlocks(certReader)
 	if err != nil {
 		return nil, err
 	}
 	if len(pkbs) != 1 {
-		return nil, fmt.Errorf("failed to single PEM block from file %s", file)
+		return nil, fmt.Errorf("failed to get single PEM block from cert %s", certReader.GetName())
 	}
 
 	var pk interface{}
@@ -191,12 +264,12 @@ func privateKeyFromFile(file string, password []byte) ([]byte, error) {
 	return convertPrivateKeyToPKCS8(pk)
 }
 
-func certsFromFile(file string) ([]keystore.Certificate, error) {
-	if len(file) == 0 {
+func (opts *CertConverter) loadCerts(certReader CertReader) ([]keystore.Certificate, error) {
+	if certReader == nil {
 		return nil, nil
 	}
 
-	cbs, err := pemFileToBlocks(file)
+	cbs, err := opts.pemToBlocks(certReader)
 	if err != nil {
 		return nil, err
 	}
@@ -212,11 +285,12 @@ func certsFromFile(file string) ([]keystore.Certificate, error) {
 	return certs, nil
 }
 
-func pemFileToBlocks(path string) ([]*pem.Block, error) {
-	raw, err := ioutil.ReadFile(path)
+func (opts *CertConverter) pemToBlocks(cert CertReader) ([]*pem.Block, error) {
+	raw, err := cert.Read()
 	if err != nil {
 		return nil, err
 	}
+
 	var (
 		pemBlocks []*pem.Block
 		current   *pem.Block
@@ -228,7 +302,7 @@ func pemFileToBlocks(path string) ([]*pem.Block, error) {
 			if len(pemBlocks) > 0 {
 				return pemBlocks, nil
 			}
-			return nil, fmt.Errorf("failed to decode any PEM blocks from %s", path)
+			return nil, fmt.Errorf("failed to decode any PEM blocks from %s", cert.GetName())
 		}
 		pemBlocks = append(pemBlocks, current)
 		if len(raw) == 0 {
@@ -238,10 +312,19 @@ func pemFileToBlocks(path string) ([]*pem.Block, error) {
 	return pemBlocks, nil
 }
 
-func writeKeyStore(ks keystore.KeyStore, path string, passphrase []byte) error {
+func WriteKeyStore(ks keystore.KeyStore, keystorePath string, password string) error {
+	if len(keystorePath) == 0 {
+		return fmt.Errorf("Missing keystore path")
+	}
+
+	keystorePassword := []byte(password)
+	if len(keystorePassword) == 0 {
+		keystorePassword = []byte(DefaultKeystorePassword)
+	}
+
 	// Let's do this atomically (temp + rename) in case anything is watching (inotify?) on
 	// the keystore itself.
-	absPath, err := filepath.Abs(path)
+	absPath, err := filepath.Abs(keystorePath)
 	if err != nil {
 		return err
 	}
@@ -250,7 +333,7 @@ func writeKeyStore(ks keystore.KeyStore, path string, passphrase []byte) error {
 	if err != nil {
 		return err
 	}
-	err = keystore.Encode(tempFile, ks, passphrase)
+	err = keystore.Encode(tempFile, ks, keystorePassword)
 	tempFile.Close()
 	if err != nil {
 		return err
